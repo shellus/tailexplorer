@@ -35,8 +35,17 @@ pip install -r requirements.txt
 
 ### 2. 配置日志源
 
-编辑 `config.yaml` 文件，配置您的日志源：
+**重要**: 必须创建配置文件才能运行应用程序。
 
+```bash
+# 复制示例配置文件
+cp config.example.yaml config.yaml
+
+# 编辑配置文件，配置您的日志源
+nano config.yaml  # 或使用您喜欢的编辑器
+```
+
+配置示例：
 ```yaml
 log_sources:
   my-app:
@@ -62,7 +71,8 @@ python app.py
 ```
 tailexplorer/
 ├── app.py              # 主应用程序
-├── config.yaml         # 日志源配置文件
+├── config.example.yaml # 配置文件示例
+├── config.yaml         # 日志源配置文件（需要创建）
 ├── static/             # 静态文件
 │   ├── index.html     # 主页面
 │   ├── style.css      # 样式文件
@@ -70,6 +80,7 @@ tailexplorer/
 ├── requirements.txt    # Python依赖
 ├── test_*.html        # 功能测试页面
 ├── test_websocket.py  # WebSocket测试脚本
+├── .gitignore         # Git忽略文件
 └── README.md          # 项目说明
 ```
 

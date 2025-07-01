@@ -240,7 +240,9 @@ class TailExplorer {
     
     matchesFilter(log) {
         if (!this.currentFilter) return true;
-        return log.toLowerCase().includes(this.currentFilter);
+        // 移除ANSI代码后再进行匹配
+        const cleanLog = this.stripAnsiCodes(log);
+        return cleanLog.toLowerCase().includes(this.currentFilter);
     }
     
     renderLogs() {
@@ -260,16 +262,22 @@ class TailExplorer {
     appendLogToDisplay(log) {
         const logElement = document.createElement('div');
         logElement.className = 'log-line';
-        
+
+        // 转换ANSI颜色代码为HTML
+        let processedLog = this.convertAnsiToHtml(this.escapeHtml(log));
+
         // 高亮关键词
         if (this.currentFilter) {
-            const regex = new RegExp(`(${this.escapeRegex(this.currentFilter)})`, 'gi');
-            logElement.innerHTML = this.escapeHtml(log).replace(regex, '<mark>$1</mark>');
-            logElement.classList.add('highlight');
-        } else {
-            logElement.textContent = log;
+            // 先移除ANSI代码进行搜索
+            const cleanLog = this.stripAnsiCodes(log);
+            if (cleanLog.toLowerCase().includes(this.currentFilter)) {
+                const regex = new RegExp(`(${this.escapeRegex(this.currentFilter)})`, 'gi');
+                processedLog = processedLog.replace(regex, '<mark>$1</mark>');
+                logElement.classList.add('highlight');
+            }
         }
-        
+
+        logElement.innerHTML = processedLog;
         this.logDisplay.appendChild(logElement);
     }
     
@@ -357,6 +365,70 @@ class TailExplorer {
     
     escapeRegex(string) {
         return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    stripAnsiCodes(text) {
+        // 移除ANSI颜色代码和控制字符
+        return text.replace(/\x1b\[[0-9;]*m/g, '');
+    }
+
+    convertAnsiToHtml(text) {
+        // 将ANSI颜色代码转换为HTML样式
+        const ansiColors = {
+            '30': 'color: #000000',  // 黑色
+            '31': 'color: #cd3131',  // 红色
+            '32': 'color: #0dbc79',  // 绿色
+            '33': 'color: #e5e510',  // 黄色
+            '34': 'color: #2472c8',  // 蓝色
+            '35': 'color: #bc3fbc',  // 紫色
+            '36': 'color: #11a8cd',  // 青色
+            '37': 'color: #e5e5e5',  // 白色
+            '90': 'color: #666666',  // 亮黑色（灰色）
+            '91': 'color: #f14c4c',  // 亮红色
+            '92': 'color: #23d18b',  // 亮绿色
+            '93': 'color: #f5f543',  // 亮黄色
+            '94': 'color: #3b8eea',  // 亮蓝色
+            '95': 'color: #d670d6',  // 亮紫色
+            '96': 'color: #29b8db',  // 亮青色
+            '97': 'color: #e5e5e5',  // 亮白色
+            '1': 'font-weight: bold', // 粗体
+            '0': ''  // 重置
+        };
+
+        let result = text;
+        let openTags = [];
+
+        // 处理ANSI转义序列
+        result = result.replace(/\x1b\[([0-9;]*)m/g, (_, codes) => {
+            if (!codes) return '';
+
+            const codeList = codes.split(';');
+            let html = '';
+
+            for (const code of codeList) {
+                if (code === '0' || code === '') {
+                    // 重置所有样式
+                    while (openTags.length > 0) {
+                        html += '</span>';
+                        openTags.pop();
+                    }
+                } else if (ansiColors[code]) {
+                    // 添加新样式
+                    html += `<span style="${ansiColors[code]}">`;
+                    openTags.push('span');
+                }
+            }
+
+            return html;
+        });
+
+        // 关闭所有未关闭的标签
+        while (openTags.length > 0) {
+            result += '</span>';
+            openTags.pop();
+        }
+
+        return result;
     }
 }
 
