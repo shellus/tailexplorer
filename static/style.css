@@ -22,12 +22,21 @@ body {
 
 /* 头部样式 */
 .header {
-    text-align: center;
     margin-bottom: 20px;
     padding: 15px;
     background: linear-gradient(135deg, #2c3e50, #3498db);
     border-radius: 8px;
     box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+}
+
+.header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.header-title {
+    text-align: left;
 }
 
 .header h1 {
@@ -40,6 +49,11 @@ body {
     color: #ecf0f1;
     font-size: 0.9rem;
     opacity: 0.9;
+}
+
+.header-actions {
+    display: flex;
+    gap: 10px;
 }
 
 /* 控制面板样式 */

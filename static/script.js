@@ -26,6 +26,7 @@ class TailExplorer {
         this.clearFilterBtn = document.getElementById('clear-filter');
         this.scrollToBottomBtn = document.getElementById('scroll-to-bottom');
         this.clearLogsBtn = document.getElementById('clear-logs');
+        this.logoutBtn = document.getElementById('logout-btn');
         this.connectionStatus = document.getElementById('connection-status');
         this.logCount = document.getElementById('log-count');
         this.sourceInfo = document.getElementById('source-info');
@@ -71,6 +72,11 @@ class TailExplorer {
             this.clearLogs();
         });
 
+        // 登出
+        this.logoutBtn.addEventListener('click', () => {
+            this.handleLogout();
+        });
+
         // 监听滚动事件
         this.logDisplay.addEventListener('scroll', () => {
             this.checkScrollPosition();
@@ -100,6 +106,11 @@ class TailExplorer {
     async loadSources() {
         try {
             const response = await fetch('/api/sources');
+            if (response.status === 401) {
+                // 未授权，跳转到登录页
+                window.location.href = '/login';
+                return;
+            }
             if (response.ok) {
                 this.availableSources = await response.json();
                 this.updateSourceSelect();
@@ -110,6 +121,25 @@ class TailExplorer {
         } catch (error) {
             console.error('加载日志源失败:', error);
             this.showError('加载日志源失败: ' + error.message);
+        }
+    }
+
+    async handleLogout() {
+        try {
+            const response = await fetch('/api/logout', {
+                method: 'POST'
+            });
+
+            if (response.ok) {
+                // 登出成功，跳转到登录页
+                window.location.href = '/login';
+            } else {
+                console.error('登出失败:', response.statusText);
+            }
+        } catch (error) {
+            console.error('登出请求失败:', error);
+            // 即使请求失败，也跳转到登录页
+            window.location.href = '/login';
         }
     }
 

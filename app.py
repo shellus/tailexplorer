@@ -9,12 +9,65 @@ import json
 import subprocess
 import yaml
 import os
+import hashlib
+import secrets
+from datetime import datetime, timedelta
 from typing import Set, Dict, Optional
 from pathlib import Path
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Request, Cookie
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 import uvicorn
+
+
+class AuthManager:
+    """认证管理器"""
+
+    def __init__(self, config: dict):
+        self.security_config = config.get("security", {})
+        self.password = self.security_config.get("password")
+        self.session_expire_hours = self.security_config.get("session_expire_hours", 24)
+        self.active_sessions = {}  # session_token -> expire_time
+
+        if not self.password:
+            print("错误: 配置文件中未设置密码 (security.password)")
+            exit(1)
+
+    def generate_session_token(self) -> str:
+        """生成会话令牌"""
+        return secrets.token_urlsafe(32)
+
+    def verify_password(self, password: str) -> bool:
+        """验证密码"""
+        return password == self.password
+
+    def create_session(self) -> str:
+        """创建会话"""
+        token = self.generate_session_token()
+        expire_time = datetime.now() + timedelta(hours=self.session_expire_hours)
+        self.active_sessions[token] = expire_time
+        return token
+
+    def verify_session(self, token: str) -> bool:
+        """验证会话"""
+        if not token or token not in self.active_sessions:
+            return False
+
+        expire_time = self.active_sessions[token]
+        if datetime.now() > expire_time:
+            # 会话过期，删除
+            del self.active_sessions[token]
+            return False
+
+        return True
+
+    def cleanup_expired_sessions(self):
+        """清理过期会话"""
+        now = datetime.now()
+        expired_tokens = [token for token, expire_time in self.active_sessions.items() if now > expire_time]
+        for token in expired_tokens:
+            del self.active_sessions[token]
 
 
 class LogSourceManager:
@@ -229,24 +282,85 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # 全局变量
 log_source_manager = LogSourceManager()
+auth_manager = AuthManager(log_source_manager.config)
 connection_manager = ConnectionManager()
 active_readers: Dict[str, LogReader] = {}
 
 
+# 认证依赖
+async def verify_auth(request: Request, session_token: Optional[str] = Cookie(None)):
+    """验证认证状态"""
+    if not session_token or not auth_manager.verify_session(session_token):
+        # 如果是API请求，返回401
+        if request.url.path.startswith("/api/") or request.url.path.startswith("/ws/"):
+            raise HTTPException(status_code=401, detail="未授权访问")
+        # 如果是页面请求，重定向到登录页
+        return RedirectResponse(url="/login", status_code=302)
+    return session_token
+
+
 @app.get("/")
-async def read_root():
+async def read_root(session_token: str = Depends(verify_auth)):
     """返回主页面"""
     return FileResponse("static/index.html")
 
 
+@app.get("/login")
+async def login_page():
+    """返回登录页面"""
+    return FileResponse("static/login.html")
+
+
+@app.post("/api/login")
+async def login(request: Request):
+    """处理登录请求"""
+    try:
+        data = await request.json()
+        password = data.get("password", "")
+
+        if auth_manager.verify_password(password):
+            session_token = auth_manager.create_session()
+            response = JSONResponse({"success": True, "message": "登录成功"})
+            response.set_cookie(
+                key="session_token",
+                value=session_token,
+                max_age=auth_manager.session_expire_hours * 3600,
+                httponly=True,
+                secure=False,  # 在生产环境中应设为True（需要HTTPS）
+                samesite="lax"
+            )
+            return response
+        else:
+            return JSONResponse(
+                {"success": False, "message": "密码错误"},
+                status_code=401
+            )
+    except Exception as e:
+        return JSONResponse(
+            {"success": False, "message": "请求格式错误"},
+            status_code=400
+        )
+
+
+@app.post("/api/logout")
+async def logout(session_token: Optional[str] = Cookie(None)):
+    """处理登出请求"""
+    if session_token and session_token in auth_manager.active_sessions:
+        del auth_manager.active_sessions[session_token]
+
+    response = JSONResponse({"success": True, "message": "已登出"})
+    response.delete_cookie("session_token")
+    return response
+
+
 @app.get("/api/sources")
-async def list_log_sources():
+async def list_log_sources(session_token: str = Depends(verify_auth)):
     """获取所有可用的日志源"""
     return JSONResponse(log_source_manager.list_sources())
 
 
 @app.get("/api/sources/{source_id}")
-async def get_source_info(source_id: str):
+async def get_source_info(source_id: str, session_token: str = Depends(verify_auth)):
     """获取指定日志源的详细信息"""
     source_config = log_source_manager.get_source_config(source_id)
     if not source_config:
@@ -265,7 +379,7 @@ async def get_source_info(source_id: str):
 
 
 @app.get("/api/sources/{source_id}/recent")
-async def get_recent_logs(source_id: str, count: int = 100):
+async def get_recent_logs(source_id: str, count: int = 100, session_token: str = Depends(verify_auth)):
     """获取指定日志源的最近日志"""
     if source_id not in active_readers:
         raise HTTPException(status_code=404, detail="日志源未激活")
@@ -281,6 +395,17 @@ async def get_recent_logs(source_id: str, count: int = 100):
 @app.websocket("/ws/{source_id}")
 async def websocket_endpoint(websocket: WebSocket, source_id: str):
     """WebSocket端点 - 连接到指定的日志源"""
+    # 验证认证
+    session_token = None
+    for cookie in websocket.headers.get("cookie", "").split(";"):
+        if "session_token=" in cookie:
+            session_token = cookie.split("session_token=")[1].strip()
+            break
+
+    if not session_token or not auth_manager.verify_session(session_token):
+        await websocket.close(code=4001, reason="未授权访问")
+        return
+
     # 检查日志源是否存在
     source_config = log_source_manager.get_source_config(source_id)
     if not source_config:

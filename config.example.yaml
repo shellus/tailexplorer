@@ -61,6 +61,13 @@ server:
   reload: true
   log_level: "info"
 
+# 安全配置
+security:
+  # 访问密码（必须设置）
+  password: "your_secure_password_here"
+  # 会话过期时间（小时）
+  session_expire_hours: 24
+
 # 日志配置
 logging:
   max_lines_per_source: 10000  # 每个日志源最大保存行数
