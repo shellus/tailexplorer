@@ -10,4 +10,6 @@ __pycache__/
 test_*.html
 test_*.py
 
-# 私有配置
+# 私有配置文件
+config.yaml
+config.yaml

@@ -31,35 +31,14 @@ class LogSourceManager:
             with open(self.config_path, 'r', encoding='utf-8') as f:
                 return yaml.safe_load(f)
         except FileNotFoundError:
-            print(f"配置文件 {self.config_path} 不存在，使用默认配置")
-            return self.get_default_config()
+            print(f"错误: 配置文件 {self.config_path} 不存在")
+            print("请使用 config.example.yaml 创建配置文件")
+            exit(1)
         except Exception as e:
-            print(f"加载配置文件失败: {e}")
-            return self.get_default_config()
+            print(f"错误: 加载配置文件失败: {e}")
+            exit(1)
 
-    def get_default_config(self) -> dict:
-        """获取默认配置"""
-        return {
-            "log_sources": {
-                "default": {
-                    "name": "默认日志",
-                    "type": "docker-compose",
-                    "command": "docker-compose logs -f --tail=100",
-                    "working_dir": "/data/compose/xhj-php",
-                    "description": "默认 Docker Compose 日志"
-                }
-            },
-            "server": {
-                "host": "0.0.0.0",
-                "port": 8000,
-                "reload": True,
-                "log_level": "info"
-            },
-            "logging": {
-                "max_lines_per_source": 10000,
-                "cleanup_threshold": 5000
-            }
-        }
+
 
     def get_source_config(self, source_id: str) -> Optional[dict]:
         """获取指定日志源的配置"""
