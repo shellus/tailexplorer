@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TailExplorer - 实时日志查看器</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>🔍 TailExplorer</h1>
+            <p class="subtitle">实时Docker日志查看器</p>
+        </header>
+        
+        <div class="controls">
+            <div class="source-section">
+                <label for="source-select">日志源:</label>
+                <select id="source-select" class="source-select">
+                    <option value="">选择日志源...</option>
+                </select>
+                <button id="refresh-sources" class="btn btn-secondary">🔄 刷新</button>
+            </div>
+
+            <div class="filter-section">
+                <label for="keyword-filter">关键词过滤:</label>
+                <input
+                    type="text"
+                    id="keyword-filter"
+                    placeholder="输入关键词进行过滤..."
+                    autocomplete="off"
+                >
+                <button id="clear-filter" class="btn btn-secondary">清除</button>
+            </div>
+
+            <div class="action-section">
+                <button id="scroll-to-bottom" class="btn btn-primary">
+                    📜 滚动到底部
+                </button>
+                <button id="clear-logs" class="btn btn-secondary">
+                    🗑️ 清空日志
+                </button>
+                <div class="status-indicator">
+                    <span id="connection-status" class="status-disconnected">未连接</span>
+                    <span id="log-count">日志: 0</span>
+                    <span id="source-info"></span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="log-container">
+            <div id="log-display" class="log-display">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>正在连接日志服务...</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="auto-scroll-indicator" id="auto-scroll-indicator">
+            🔄 自动滚动已启用
+        </div>
+    </div>
+    
+    <script src="/static/script.js"></script>
+</body>
+</html>

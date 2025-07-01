@@ -1,0 +1,53 @@
+# TailExplorer 配置文件
+# 定义多个日志源
+
+log_sources:
+  # Docker Compose 日志源
+  xhj-php:
+    name: "XHJ PHP 服务日志"
+    type: "docker-compose"
+    command: "docker-compose logs -f --tail=100"
+    working_dir: "/data/compose/xhj-php"
+    description: "XHJ PHP 服务的 Docker Compose 日志"
+    
+  ouserver:
+    name: "OU Server 日志"
+    type: "docker-compose"
+    command: "docker-compose logs ouserver --tail=1000 -f"
+    working_dir: "/root/projects"
+    description: "OU Server 容器日志"
+    
+  # 文件日志源
+  nginx-access:
+    name: "Nginx 访问日志"
+    type: "file"
+    command: "tail -f -n 100 /var/log/nginx/access.log"
+    working_dir: "/"
+    description: "Nginx 访问日志文件"
+    
+  nginx-error:
+    name: "Nginx 错误日志"
+    type: "file"
+    command: "tail -f -n 100 /var/log/nginx/error.log"
+    working_dir: "/"
+    description: "Nginx 错误日志文件"
+    
+  # 系统日志源
+  syslog:
+    name: "系统日志"
+    type: "system"
+    command: "journalctl -f -n 100"
+    working_dir: "/"
+    description: "系统 journalctl 日志"
+
+# 服务器配置
+server:
+  host: "0.0.0.0"
+  port: 8000
+  reload: true
+  log_level: "info"
+
+# 日志配置
+logging:
+  max_lines_per_source: 10000  # 每个日志源最大保存行数
+  cleanup_threshold: 5000      # 清理阈值，超过时保留的行数
