@@ -1,23 +1,23 @@
-# TailExplorer 配置文件
-# 定义多个日志源
+# TailExplorer 配置文件示例
+# 复制此文件为 config.yaml 并根据您的环境进行配置
 
 log_sources:
-  # Docker Compose 日志源
-  xhj-php:
-    name: "XHJ PHP 服务日志"
+  # Docker Compose 日志源示例
+  webapp:
+    name: "Web应用日志"
     type: "docker-compose"
     command: "docker-compose logs -f --tail=100"
-    working_dir: "/data/compose/xhj-php"
-    description: "XHJ PHP 服务的 Docker Compose 日志"
+    working_dir: "/path/to/your/compose/project"
+    description: "Web应用的 Docker Compose 日志"
     
-  ouserver:
-    name: "OU Server 日志"
+  api-server:
+    name: "API服务日志"
     type: "docker-compose"
-    command: "docker-compose logs ouserver --tail=1000 -f"
-    working_dir: "/root/projects"
-    description: "OU Server 容器日志"
+    command: "docker-compose logs api --tail=500 -f"
+    working_dir: "/path/to/your/api/project"
+    description: "API服务容器日志"
     
-  # 文件日志源
+  # 文件日志源示例
   nginx-access:
     name: "Nginx 访问日志"
     type: "file"
@@ -32,13 +32,27 @@ log_sources:
     working_dir: "/"
     description: "Nginx 错误日志文件"
     
-  # 系统日志源
+  app-logs:
+    name: "应用日志文件"
+    type: "file"
+    command: "tail -f -n 200 /var/log/myapp/app.log"
+    working_dir: "/"
+    description: "应用程序日志文件"
+    
+  # 系统日志源示例
   syslog:
     name: "系统日志"
     type: "system"
     command: "journalctl -f -n 100"
     working_dir: "/"
     description: "系统 journalctl 日志"
+    
+  docker-daemon:
+    name: "Docker守护进程日志"
+    type: "system"
+    command: "journalctl -u docker -f -n 50"
+    working_dir: "/"
+    description: "Docker守护进程的系统日志"
 
 # 服务器配置
 server:
