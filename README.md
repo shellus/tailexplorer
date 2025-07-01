@@ -66,6 +66,58 @@ python app.py
 
 打开浏览器访问 http://localhost:8000
 
+## 系统服务部署
+
+### 作为systemd服务运行
+
+1. **复制服务文件**：
+```bash
+sudo cp tailexplorer.service /etc/systemd/system/
+```
+
+2. **修改服务文件中的路径**（如果项目不在 `/root/projects/tailexplorer`）：
+```bash
+sudo nano /etc/systemd/system/tailexplorer.service
+# 只需修改这一行：
+# Environment=TAILEXPLORER_HOME=/your/actual/project/path
+```
+
+3. **启用并启动服务**：
+```bash
+# 重新加载systemd配置
+sudo systemctl daemon-reload
+
+# 启用服务（开机自启）
+sudo systemctl enable tailexplorer
+
+# 启动服务
+sudo systemctl start tailexplorer
+
+# 查看服务状态
+sudo systemctl status tailexplorer
+```
+
+4. **查看日志**：
+```bash
+# 查看服务日志
+sudo journalctl -u tailexplorer -f
+
+# 查看最近的日志
+sudo journalctl -u tailexplorer --since "1 hour ago"
+```
+
+5. **服务管理命令**：
+```bash
+# 停止服务
+sudo systemctl stop tailexplorer
+
+# 重启服务
+sudo systemctl restart tailexplorer
+
+# 禁用服务
+sudo systemctl disable tailexplorer
+```
+
 ## 项目结构
 
 ```
@@ -73,6 +125,7 @@ tailexplorer/
 ├── app.py              # 主应用程序
 ├── config.example.yaml # 配置文件示例
 ├── config.yaml         # 日志源配置文件（需要创建）
+├── tailexplorer.service # systemd服务文件
 ├── static/             # 静态文件
 │   ├── index.html     # 主页面
 │   ├── style.css      # 样式文件

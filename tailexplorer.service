@@ -1,0 +1,28 @@
+[Unit]
+Description=TailExplorer - 实时多源日志查看器
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+# 只需修改下面这行为您的实际项目路径
+Environment=TAILEXPLORER_HOME=/root/projects/tailexplorer
+WorkingDirectory=${TAILEXPLORER_HOME}
+Environment=PATH=${TAILEXPLORER_HOME}/venv/bin
+ExecStart=${TAILEXPLORER_HOME}/venv/bin/python app.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tailexplorer
+
+# 安全设置
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=${TAILEXPLORER_HOME}
+
+[Install]
+WantedBy=multi-user.target
