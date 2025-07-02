@@ -142,8 +142,13 @@ class ConnectionManager:
                 disconnected.add(connection)
 
         # 清理断开的连接
-        for connection in disconnected:
-            self.active_connections[source_id].discard(connection)
+        if disconnected:
+            for connection in disconnected:
+                self.active_connections[source_id].discard(connection)
+
+            # 如果没有连接了，删除整个源
+            if not self.active_connections[source_id]:
+                del self.active_connections[source_id]
 
     def get_connection_count(self, source_id: str) -> int:
         """获取指定日志源的连接数"""
@@ -166,6 +171,7 @@ class LogReader:
     async def start_reading(self, connection_manager: ConnectionManager):
         """开始读取日志"""
         if self.running:
+            print(f"[{self.source_id}] 日志读取器已在运行，跳过启动")
             return
 
         self.running = True
@@ -179,7 +185,7 @@ class LogReader:
             else:
                 command_parts = command
 
-            print(f"启动日志读取: {command} (工作目录: {working_dir})")
+            print(f"[{self.source_id}] 启动日志读取: {command} (工作目录: {working_dir})")
 
             # 启动进程
             self.process = await asyncio.create_subprocess_exec(
@@ -193,9 +199,11 @@ class LogReader:
             initial_logs = []
             line_count = 0
             max_initial_lines = 100  # 初始加载最多100行
+            timeout_count = 0
+            max_timeouts = 3  # 最多等待3次超时
 
             # 先读取现有的日志
-            while line_count < max_initial_lines:
+            while line_count < max_initial_lines and timeout_count < max_timeouts:
                 try:
                     line = await asyncio.wait_for(
                         self.process.stdout.readline(), timeout=2.0
@@ -209,19 +217,28 @@ class LogReader:
                         self.logs.append(log_line)
                         line_count += 1
                 except asyncio.TimeoutError:
-                    break
+                    timeout_count += 1
 
             # 发送初始日志
+            await connection_manager.broadcast_to_source(self.source_id, json.dumps({
+                "type": "initial_logs",
+                "logs": initial_logs,
+                "source_id": self.source_id
+            }))
+
             if initial_logs:
-                await connection_manager.broadcast_to_source(self.source_id, json.dumps({
-                    "type": "initial_logs",
-                    "logs": initial_logs,
-                    "source_id": self.source_id
-                }))
+                print(f"[{self.source_id}] 发送 {len(initial_logs)} 条初始日志")
 
             # 持续读取新日志
-            while self.running and self.process.returncode is None:
+            log_counter = 0
+
+            while self.running:
                 try:
+                    # 检查进程状态
+                    if self.process.returncode is not None:
+                        print(f"[{self.source_id}] 进程已退出，返回码: {self.process.returncode}")
+                        break
+
                     line = await self.process.stdout.readline()
                     if not line:
                         break
@@ -229,6 +246,7 @@ class LogReader:
                     log_line = line.decode('utf-8', errors='ignore').strip()
                     if log_line:
                         self.logs.append(log_line)
+                        log_counter += 1
 
                         # 限制内存使用
                         if len(self.logs) > self.max_lines:
@@ -241,11 +259,11 @@ class LogReader:
                         }))
 
                 except Exception as e:
-                    print(f"读取日志时出错: {e}")
+                    print(f"[{self.source_id}] 读取日志时出错: {e}")
                     break
 
         except Exception as e:
-            print(f"启动日志读取失败: {e}")
+            print(f"[{self.source_id}] 启动日志读取失败: {e}")
             await connection_manager.broadcast_to_source(self.source_id, json.dumps({
                 "type": "error",
                 "message": f"无法读取日志: {e}",
@@ -269,6 +287,16 @@ class LogReader:
             except:
                 pass
 
+    async def check_process_status(self):
+        """检查进程状态"""
+        if not self.process:
+            return "未启动"
+
+        if self.process.returncode is None:
+            return "运行中"
+        else:
+            return f"已退出 (返回码: {self.process.returncode})"
+
     def get_recent_logs(self, count: int = 100) -> list:
         """获取最近的日志"""
         return self.logs[-count:] if self.logs else []
@@ -285,6 +313,15 @@ log_source_manager = LogSourceManager()
 auth_manager = AuthManager(log_source_manager.config)
 connection_manager = ConnectionManager()
 active_readers: Dict[str, LogReader] = {}
+
+
+async def cleanup_reader_later(source_id: str, delay: int = 30):
+    """延迟清理日志读取器"""
+    await asyncio.sleep(delay)
+    if (source_id in active_readers and
+        connection_manager.get_connection_count(source_id) == 0 and
+        not active_readers[source_id].running):
+        del active_readers[source_id]
 
 
 # 认证依赖
@@ -392,9 +429,37 @@ async def get_recent_logs(source_id: str, count: int = 100, session_token: str =
     })
 
 
+@app.get("/api/sources/{source_id}/status")
+async def get_source_status(source_id: str, session_token: str = Depends(verify_auth)):
+    """获取指定日志源的详细状态"""
+    if source_id not in active_readers:
+        return JSONResponse({
+            "source_id": source_id,
+            "status": "未激活",
+            "process_status": "未启动",
+            "log_count": 0,
+            "connections": connection_manager.get_connection_count(source_id)
+        })
+
+    reader = active_readers[source_id]
+    process_status = await reader.check_process_status()
+
+    return JSONResponse({
+        "source_id": source_id,
+        "status": "运行中" if reader.running else "已停止",
+        "process_status": process_status,
+        "log_count": len(reader.logs),
+        "connections": connection_manager.get_connection_count(source_id),
+        "max_lines": reader.max_lines,
+        "cleanup_threshold": reader.cleanup_threshold
+    })
+
+
 @app.websocket("/ws/{source_id}")
 async def websocket_endpoint(websocket: WebSocket, source_id: str):
     """WebSocket端点 - 连接到指定的日志源"""
+    client_ip = websocket.client.host if websocket.client else "unknown"
+
     # 验证认证
     session_token = None
     for cookie in websocket.headers.get("cookie", "").split(";"):
@@ -412,21 +477,32 @@ async def websocket_endpoint(websocket: WebSocket, source_id: str):
         await websocket.close(code=4004, reason="日志源不存在")
         return
 
+    # 连接到连接管理器
     await connection_manager.connect(websocket, source_id)
+    connection_count = connection_manager.get_connection_count(source_id)
+    print(f"[{source_id}] WebSocket连接 #{connection_count} from {client_ip}")
 
-    # 如果是第一个连接到此日志源，开始读取日志
-    if connection_manager.get_connection_count(source_id) == 1:
-        if source_id not in active_readers:
-            active_readers[source_id] = LogReader(source_id, source_config, log_source_manager)
+    # 确保日志读取器存在并运行
+    if source_id not in active_readers:
+        active_readers[source_id] = LogReader(source_id, source_config, log_source_manager)
 
-        if not active_readers[source_id].running:
-            asyncio.create_task(active_readers[source_id].start_reading(connection_manager))
+    reader = active_readers[source_id]
+    if not reader.running:
+        asyncio.create_task(reader.start_reading(connection_manager))
+    else:
+        # 发送现有日志给新连接
+        recent_logs = reader.get_recent_logs(100)
+        if recent_logs:
+            await websocket.send_text(json.dumps({
+                "type": "initial_logs",
+                "logs": recent_logs,
+                "source_id": source_id
+            }))
 
     try:
         while True:
-            # 保持连接活跃，可以接收客户端消息
+            # 保持连接活跃，处理客户端消息
             message = await websocket.receive_text()
-            # 这里可以处理客户端发送的控制消息
             try:
                 data = json.loads(message)
                 if data.get("type") == "ping":
@@ -434,12 +510,19 @@ async def websocket_endpoint(websocket: WebSocket, source_id: str):
             except:
                 pass
     except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        print(f"[{source_id}] WebSocket错误: {e}")
+    finally:
+        # 清理连接
         connection_manager.disconnect(websocket, source_id)
+        remaining_connections = connection_manager.get_connection_count(source_id)
 
-        # 如果没有活跃连接，停止读取日志
-        if connection_manager.get_connection_count(source_id) == 0:
+        if remaining_connections == 0:
+            # 停止日志读取器并延迟清理
             if source_id in active_readers:
                 active_readers[source_id].stop_reading()
+                asyncio.create_task(cleanup_reader_later(source_id))
 
 
 if __name__ == "__main__":

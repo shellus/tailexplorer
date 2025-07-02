@@ -24,9 +24,7 @@
             <div class="source-section">
                 <label for="source-select">日志源:</label>
                 <select id="source-select" class="source-select">
-                    <option value="">选择日志源...</option>
                 </select>
-                <button id="refresh-sources" class="btn btn-secondary">🔄 刷新</button>
             </div>
 
             <div class="filter-section">
@@ -41,9 +39,10 @@
             </div>
 
             <div class="action-section">
-                <button id="scroll-to-bottom" class="btn btn-primary">
-                    📜 滚动到底部
-                </button>
+                <div class="auto-scroll-toggle">
+                    <input type="checkbox" id="auto-scroll-toggle" checked>
+                    <label for="auto-scroll-toggle">自动滚动</label>
+                </div>
                 <button id="clear-logs" class="btn btn-secondary">
                     🗑️ 清空日志
                 </button>

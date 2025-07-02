@@ -21,10 +21,9 @@ class TailExplorer {
     initElements() {
         this.logDisplay = document.getElementById('log-display');
         this.sourceSelect = document.getElementById('source-select');
-        this.refreshSourcesBtn = document.getElementById('refresh-sources');
+        this.autoScrollToggle = document.getElementById('auto-scroll-toggle');
         this.keywordFilter = document.getElementById('keyword-filter');
         this.clearFilterBtn = document.getElementById('clear-filter');
-        this.scrollToBottomBtn = document.getElementById('scroll-to-bottom');
         this.clearLogsBtn = document.getElementById('clear-logs');
         this.logoutBtn = document.getElementById('logout-btn');
         this.connectionStatus = document.getElementById('connection-status');
@@ -39,14 +38,17 @@ class TailExplorer {
             const sourceId = e.target.value;
             if (sourceId) {
                 this.connectToSource(sourceId);
-            } else {
-                this.disconnect();
             }
         });
 
-        // 刷新日志源
-        this.refreshSourcesBtn.addEventListener('click', () => {
-            this.loadSources();
+        // 自动滚动开关
+        this.autoScrollToggle.addEventListener('change', (e) => {
+            this.autoScroll = e.target.checked;
+            this.updateAutoScrollIndicator();
+            if (this.autoScroll) {
+                // 勾选自动滚动时立即滚动到底部
+                this.scrollToBottom();
+            }
         });
 
         // 关键词过滤
@@ -60,11 +62,6 @@ class TailExplorer {
             this.keywordFilter.value = '';
             this.currentFilter = '';
             this.applyFilter();
-        });
-
-        // 滚动到底部
-        this.scrollToBottomBtn.addEventListener('click', () => {
-            this.scrollToBottom();
         });
 
         // 清空日志
@@ -93,10 +90,6 @@ class TailExplorer {
                     case 'l':
                         e.preventDefault();
                         this.clearLogs();
-                        break;
-                    case 'End':
-                        e.preventDefault();
-                        this.scrollToBottom();
                         break;
                 }
             }
@@ -143,17 +136,37 @@ class TailExplorer {
         }
     }
 
+    async checkAuthStatus() {
+        try {
+            const response = await fetch('/api/sources');
+            if (response.status === 401) {
+                console.log('认证失效，跳转到登录页');
+                window.location.href = '/login';
+            }
+        } catch (error) {
+            console.error('检查认证状态失败:', error);
+        }
+    }
+
     updateSourceSelect() {
         // 清空现有选项
-        this.sourceSelect.innerHTML = '<option value="">选择日志源...</option>';
+        this.sourceSelect.innerHTML = '';
 
         // 添加可用的日志源
-        for (const [sourceId, sourceInfo] of Object.entries(this.availableSources)) {
+        const sourceEntries = Object.entries(this.availableSources);
+        for (const [sourceId, sourceInfo] of sourceEntries) {
             const option = document.createElement('option');
             option.value = sourceId;
             option.textContent = `${sourceInfo.name} (${sourceInfo.type})`;
             option.title = sourceInfo.description;
             this.sourceSelect.appendChild(option);
+        }
+
+        // 自动选择第一个日志源
+        if (sourceEntries.length > 0 && !this.currentSource) {
+            const firstSourceId = sourceEntries[0][0];
+            this.sourceSelect.value = firstSourceId;
+            this.connectToSource(firstSourceId);
         }
     }
 
@@ -189,9 +202,16 @@ class TailExplorer {
             }
         };
 
-        this.ws.onclose = () => {
-            console.log(`WebSocket连接已关闭: ${sourceId}`);
+        this.ws.onclose = (event) => {
+            console.log(`WebSocket连接已关闭: ${sourceId}, 代码: ${event.code}`);
             this.updateConnectionStatus(false);
+
+            // 检查是否是认证失败 (4001自定义码或1002/1003标准码)
+            if (event.code === 4001 || event.code === 1002 || event.code === 1003) {
+                console.log('WebSocket认证失败，跳转到登录页');
+                window.location.href = '/login';
+                return;
+            }
 
             // 如果是意外断开，尝试重连
             if (this.currentSource === sourceId) {
@@ -207,6 +227,9 @@ class TailExplorer {
         this.ws.onerror = (error) => {
             console.error('WebSocket错误:', error);
             this.updateConnectionStatus(false);
+
+            // WebSocket连接失败可能是认证问题，检查API访问
+            this.checkAuthStatus();
         };
     }
 
@@ -314,16 +337,25 @@ class TailExplorer {
     scrollToBottom() {
         this.logDisplay.scrollTop = this.logDisplay.scrollHeight;
         this.isAtBottom = true;
-        this.updateAutoScrollIndicator();
     }
     
     checkScrollPosition() {
         const { scrollTop, scrollHeight, clientHeight } = this.logDisplay;
+        const wasAtBottom = this.isAtBottom;
         this.isAtBottom = scrollTop + clientHeight >= scrollHeight - 10;
-        this.updateAutoScrollIndicator();
+
+        // 如果用户手动滚动离开底部，关闭自动滚动
+        if (wasAtBottom && !this.isAtBottom && this.autoScroll) {
+            this.autoScroll = false;
+            this.updateAutoScrollIndicator();
+        }
     }
     
     updateAutoScrollIndicator() {
+        // 更新开关状态
+        this.autoScrollToggle.checked = this.autoScroll;
+
+        // 更新指示器显示
         if (this.autoScroll && this.isAtBottom) {
             this.autoScrollIndicator.classList.add('show');
         } else {
